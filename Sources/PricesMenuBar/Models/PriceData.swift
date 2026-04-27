@@ -12,3 +12,9 @@ struct HistoricalData {
     let change1y: Double?   // % vs closing price ~1 year ago
     let lastFetched: Date
 }
+
+struct ErrorEntry: Identifiable {
+    let id = UUID()
+    let timestamp: Date
+    let message: String
+}

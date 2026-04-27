@@ -3,47 +3,65 @@ import SwiftUI
 struct MenuBarView: View {
     @EnvironmentObject var store: AppStore
     @State private var showSettings = false
+    @State private var showingErrorLog = false
 
     var body: some View {
         VStack(spacing: 0) {
             toolbar
             Divider()
-            PriceHeaderView()
-            Divider()
-            itemList
-            if let err = store.priceService.lastError {
+            if showingErrorLog {
+                ErrorLogView().environmentObject(store)
+            } else {
+                PriceHeaderView()
                 Divider()
-                errorBanner(err)
+                itemList
             }
         }
         .frame(width: 500)
+        .task {
+            await store.priceService.fetchRealtime(items: store.trackedItems)
+        }
         .sheet(isPresented: $showSettings) {
             SettingsView().environmentObject(store)
         }
+        .onChange(of: store.priceService.errorLog.isEmpty) { isEmpty in
+            if isEmpty { showingErrorLog = false }
+        }
     }
 
-    // MARK: - Sub-views
+    // MARK: - Toolbar
 
     private var toolbar: some View {
         HStack(spacing: 8) {
-            Text("Prices")
-                .font(.headline)
+            Text("Prices").font(.headline)
             if !store.priceService.dataSource.isEmpty {
                 Text("via \(store.priceService.dataSource)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            if store.priceService.isLoading {
-                ProgressView().scaleEffect(0.55).frame(width: 16, height: 16)
+
+            // ⚠ only visible when there are logged errors
+            if !store.priceService.errorLog.isEmpty {
+                Button {
+                    showingErrorLog.toggle()
+                } label: {
+                    Image(systemName: showingErrorLog
+                          ? "exclamationmark.triangle.fill"
+                          : "exclamationmark.triangle")
+                        .foregroundStyle(.orange)
+                }
+                .buttonStyle(.plain)
+                .help("Show error log")
             }
+
             Button {
-                Task { await store.priceService.refresh(items: store.trackedItems) }
+                Task { await store.priceService.fetchRealtime(items: store.trackedItems) }
             } label: {
                 Image(systemName: "arrow.clockwise")
             }
             .buttonStyle(.plain)
-            .help("Refresh now")
+            .help("Refresh prices")
 
             Button { showSettings = true } label: {
                 Image(systemName: "gear")
@@ -55,6 +73,8 @@ struct MenuBarView: View {
         .padding(.vertical, 8)
     }
 
+    // MARK: - Item list
+
     @ViewBuilder
     private var itemList: some View {
         if store.trackedItems.isEmpty {
@@ -63,23 +83,17 @@ struct MenuBarView: View {
                 .padding()
         } else {
             ForEach(store.trackedItems) { item in
-                PriceRowView(item: item, data: store.priceService.prices[item.symbol])
+                PriceRowView(
+                    item: item,
+                    realtime: store.priceService.realtime[item.symbol],
+                    historical: store.priceService.historical[item.symbol],
+                    isStale: store.priceService.isLoadingRealtime
+                        && store.priceService.realtime[item.symbol] != nil
+                )
                 if item.id != store.trackedItems.last?.id {
                     Divider().padding(.horizontal, 8)
                 }
             }
         }
-    }
-
-    private func errorBanner(_ message: String) -> some View {
-        HStack {
-            Image(systemName: "exclamationmark.triangle")
-                .foregroundStyle(.red)
-            Text(message)
-                .font(.caption)
-                .foregroundStyle(.red)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 4)
     }
 }

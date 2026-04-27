@@ -16,12 +16,11 @@ struct PricesMenuBarApp: App {
         .menuBarExtraStyle(.window)
     }
 
-    // Shows the first tracked item's current price, or a fallback icon.
     @ViewBuilder
     private var menuBarLabel: some View {
         if let first = store.trackedItems.first,
-           let price = store.priceService.prices[first.symbol] {
-            Text(menuBarPrice(price.priceUSD))
+           let rt = store.priceService.realtime[first.symbol] {
+            Text(menuBarPrice(rt.priceUSD))
                 .font(.system(.body, design: .monospaced))
         } else {
             Image(systemName: "chart.line.uptrend.xyaxis")
@@ -35,9 +34,7 @@ struct PricesMenuBarApp: App {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Hide from Dock — this is a menu-bar-only app.
         NSApp.setActivationPolicy(.accessory)
-        // Load API keys from .env file if present.
         Config.loadDotEnv()
     }
 }

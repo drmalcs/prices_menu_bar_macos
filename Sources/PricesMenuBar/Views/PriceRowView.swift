@@ -1,6 +1,5 @@
 import SwiftUI
 
-// Column widths — keep in sync with PriceHeaderView.
 private enum Col {
     static let name:   CGFloat = 72
     static let price:  CGFloat = 100
@@ -11,12 +10,12 @@ private enum Col {
 struct PriceHeaderView: View {
     var body: some View {
         HStack(spacing: 0) {
-            Text("Asset")  .frame(width: Col.name,   alignment: .leading)
-            Text("Price")  .frame(width: Col.price,  alignment: .trailing)
-            Text("1h")     .frame(width: Col.change, alignment: .trailing)
-            Text("24h")    .frame(width: Col.change, alignment: .trailing)
-            Text("1y")     .frame(width: Col.change, alignment: .trailing)
-            Text("Val")    .frame(width: Col.val,    alignment: .trailing)
+            Text("Asset") .frame(width: Col.name,   alignment: .leading)
+            Text("Price") .frame(width: Col.price,  alignment: .trailing)
+            Text("1h")    .frame(width: Col.change, alignment: .trailing)
+            Text("24h")   .frame(width: Col.change, alignment: .trailing)
+            Text("1y")    .frame(width: Col.change, alignment: .trailing)
+            Text("Val")   .frame(width: Col.val,    alignment: .trailing)
         }
         .font(.caption)
         .foregroundStyle(.secondary)
@@ -27,39 +26,61 @@ struct PriceHeaderView: View {
 
 struct PriceRowView: View {
     let item: TrackedItem
-    let data: PriceData?
+    let realtime: RealtimeData?
+    let historical: HistoricalData?
+    let isStale: Bool   // true while realtime is loading and old data exists
 
     var body: some View {
         HStack(spacing: 0) {
             Text(item.displayName)
                 .frame(width: Col.name, alignment: .leading)
 
-            if let d = data {
-                // Price colour tracks 1hr direction (green=up, red=down per spec).
-                Text(formatUSD(d.priceUSD))
-                    .foregroundStyle(priceColor(d.change1h))
-                    .frame(width: Col.price, alignment: .trailing)
+            // Price: coloured by 1h direction; grey when stale
+            priceCell
 
-                changeCell(d.change1h)
-                changeCell(d.change24h)
-                changeCell(d.change1y)
-                valCell(d)
-            } else {
-                ForEach(0..<5, id: \.self) { _ in
-                    Text("—").foregroundStyle(.tertiary)
-                        .frame(width: Col.change, alignment: .trailing)
-                }
-            }
+            // 1h: grey when stale, otherwise green/red
+            realtimeChangeCell(realtime?.change1h)
+
+            // 24h and 1y: always green/red — historical data doesn't go stale
+            historicalChangeCell(historical?.change24h)
+            historicalChangeCell(historical?.change1y)
+
+            // Val: grey when stale
+            valCell
         }
         .font(.system(.body, design: .monospaced))
         .padding(.horizontal, 12)
         .padding(.vertical, 5)
     }
 
-    // MARK: - Sub-views
+    // MARK: - Cells
 
     @ViewBuilder
-    private func changeCell(_ value: Double?) -> some View {
+    private var priceCell: some View {
+        if let rt = realtime {
+            Text(formatUSD(rt.priceUSD))
+                .foregroundStyle(isStale ? Color.secondary : priceColor(rt.change1h))
+                .frame(width: Col.price, alignment: .trailing)
+        } else {
+            Text("—").foregroundStyle(.tertiary)
+                .frame(width: Col.price, alignment: .trailing)
+        }
+    }
+
+    @ViewBuilder
+    private func realtimeChangeCell(_ value: Double?) -> some View {
+        if let v = value {
+            Text(formatChange(v))
+                .foregroundStyle(isStale ? Color.secondary : (v >= 0 ? Color.green : Color.red))
+                .frame(width: Col.change, alignment: .trailing)
+        } else {
+            Text("—").foregroundStyle(.tertiary)
+                .frame(width: Col.change, alignment: .trailing)
+        }
+    }
+
+    @ViewBuilder
+    private func historicalChangeCell(_ value: Double?) -> some View {
         if let v = value {
             Text(formatChange(v))
                 .foregroundStyle(v >= 0 ? Color.green : Color.red)
@@ -71,9 +92,10 @@ struct PriceRowView: View {
     }
 
     @ViewBuilder
-    private func valCell(_ d: PriceData) -> some View {
-        if item.quantity > 0 {
-            Text(formatGBP(d.priceGBP * item.quantity))
+    private var valCell: some View {
+        if let rt = realtime, item.quantity > 0 {
+            Text(formatGBP(rt.priceGBP * item.quantity))
+                .foregroundStyle(isStale ? Color.secondary : Color.primary)
                 .frame(width: Col.val, alignment: .trailing)
         } else {
             Text("—").foregroundStyle(.tertiary)

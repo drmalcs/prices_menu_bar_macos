@@ -2,48 +2,57 @@ import Foundation
 
 @MainActor
 final class PriceService: ObservableObject {
-    @Published var prices: [String: PriceData] = [:]
-    @Published var isLoading = false
-    @Published var lastError: String?
-    @Published var dataSource: String = ""
+    @Published var realtime:            [String: RealtimeData]  = [:]
+    @Published var historical:          [String: HistoricalData] = [:]
+    @Published var isLoadingRealtime:   Bool = false
+    @Published var isLoadingHistorical: Bool = false
+    @Published var dataSource:          String = ""
+    @Published var errorLog:            [ErrorEntry] = []
 
-    private var refreshTask: Task<Void, Never>?
+    private let maxLogEntries = 50
 
-    func startRefreshing(items: [TrackedItem]) {
-        refreshTask?.cancel()
-        guard !items.isEmpty else { return }
-        refreshTask = Task { [weak self] in
-            while !Task.isCancelled {
-                await self?.refresh(items: items)
-                try? await Task.sleep(for: .seconds(60))
-            }
-        }
-    }
-
-    func stopRefreshing() {
-        refreshTask?.cancel()
-        refreshTask = nil
-    }
-
-    func refresh(items: [TrackedItem]) async {
-        guard !items.isEmpty else { return }
-        isLoading = true
-        lastError = nil
-
+    func fetchRealtime(items: [TrackedItem]) async {
+        guard !items.isEmpty, !isLoadingRealtime else { return }
+        isLoadingRealtime = true
         do {
-            let result = try await YahooFinanceService().fetchPrices(for: items)
-            prices = result
-            dataSource = result.values.first?.source ?? "Yahoo Finance"
+            let result = try await YahooFinanceService().fetchRealtimeData(for: items)
+            realtime = result
+            dataSource = "Yahoo Finance"
         } catch {
-            // Yahoo throttled or failed — fall back to Alpha Vantage.
+            appendError("Yahoo Finance: \(error.localizedDescription)")
             do {
-                let result = try await AlphaVantageService().fetchPrices(for: items)
-                prices = result
-                dataSource = result.values.first?.source ?? "Alpha Vantage"
+                let result = try await AlphaVantageService().fetchRealtimeData(for: items)
+                realtime = result
+                dataSource = "Alpha Vantage"
             } catch let avErr {
-                lastError = avErr.localizedDescription
+                appendError("Alpha Vantage: \(avErr.localizedDescription)")
             }
         }
-        isLoading = false
+        isLoadingRealtime = false
+    }
+
+    func fetchHistorical(items: [TrackedItem]) async {
+        guard !items.isEmpty, !isLoadingHistorical else { return }
+        isLoadingHistorical = true
+        do {
+            let result = try await YahooFinanceService().fetchHistoricalData(for: items)
+            historical = result
+        } catch {
+            appendError("Yahoo Finance (historical): \(error.localizedDescription)")
+            do {
+                let result = try await AlphaVantageService().fetchHistoricalData(for: items)
+                historical = result
+            } catch let avErr {
+                appendError("Alpha Vantage (historical): \(avErr.localizedDescription)")
+            }
+        }
+        isLoadingHistorical = false
+    }
+
+    private func appendError(_ message: String) {
+        errorLog.append(ErrorEntry(timestamp: Date(), message: message))
+        if errorLog.count > maxLogEntries {
+            errorLog.removeFirst(errorLog.count - maxLogEntries)
+        }
     }
 }

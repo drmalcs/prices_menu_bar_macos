@@ -5,7 +5,7 @@ final class AppStore: ObservableObject {
     @Published var trackedItems: [TrackedItem] {
         didSet {
             saveItems()
-            priceService.startRefreshing(items: trackedItems)
+            Task { await priceService.fetchHistorical(items: trackedItems) }
         }
     }
 
@@ -18,15 +18,10 @@ final class AppStore: ObservableObject {
         } else {
             trackedItems = TrackedItem.defaults
         }
-        // didSet doesn't fire during init, so kick off the first fetch here.
-        // Task inherits @MainActor context from the enclosing class.
         Task { [weak self] in
-            self?.priceService.startRefreshing(items: self?.trackedItems ?? [])
+            guard let self else { return }
+            await self.priceService.fetchHistorical(items: self.trackedItems)
         }
-    }
-
-    func startRefreshing() {
-        priceService.startRefreshing(items: trackedItems)
     }
 
     private func saveItems() {
