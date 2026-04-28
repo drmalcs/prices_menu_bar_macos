@@ -2,7 +2,7 @@ import SwiftUI
 
 struct MenuBarView: View {
     @EnvironmentObject var store: AppStore
-    @State private var showSettings = false
+    @Environment(\.openWindow) private var openWindow
     @State private var showingErrorLog = false
 
     var body: some View {
@@ -18,13 +18,16 @@ struct MenuBarView: View {
             }
         }
         .frame(width: 500)
+        .background(Theme.background)
+        .preferredColorScheme(.dark)
         .task {
-            await store.priceService.fetchRealtime(items: store.trackedItems)
+            // Fetch both concurrently on every popover open.
+            async let r: () = store.priceService.fetchRealtime(items: store.trackedItems)
+            async let h: () = store.priceService.fetchHistorical(items: store.trackedItems)
+            await r
+            await h
         }
-        .sheet(isPresented: $showSettings) {
-            SettingsView().environmentObject(store)
-        }
-        .onChange(of: store.priceService.errorLog.isEmpty) { isEmpty in
+        .onChange(of: store.priceService.errorLog.isEmpty) { _, isEmpty in
             if isEmpty { showingErrorLog = false }
         }
     }
@@ -63,7 +66,10 @@ struct MenuBarView: View {
             .buttonStyle(.plain)
             .help("Refresh prices")
 
-            Button { showSettings = true } label: {
+            Button {
+                NSApp.activate()
+                openWindow(id: "settings")
+            } label: {
                 Image(systemName: "gear")
             }
             .buttonStyle(.plain)
@@ -88,7 +94,9 @@ struct MenuBarView: View {
                     realtime: store.priceService.realtime[item.symbol],
                     historical: store.priceService.historical[item.symbol],
                     isStale: store.priceService.isLoadingRealtime
-                        && store.priceService.realtime[item.symbol] != nil
+                        && store.priceService.realtime[item.symbol] != nil,
+                    isHistoricalStale: store.priceService.isLoadingHistorical
+                        && store.priceService.historical[item.symbol] != nil
                 )
                 if item.id != store.trackedItems.last?.id {
                     Divider().padding(.horizontal, 8)

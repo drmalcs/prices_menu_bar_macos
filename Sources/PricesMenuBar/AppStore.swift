@@ -5,7 +5,12 @@ final class AppStore: ObservableObject {
     @Published var trackedItems: [TrackedItem] {
         didSet {
             saveItems()
-            Task { await priceService.fetchHistorical(items: trackedItems) }
+            // Only refetch historical data when the tracked symbols change, not on quantity edits.
+            let oldSymbols = Set(oldValue.map(\.symbol))
+            let newSymbols = Set(trackedItems.map(\.symbol))
+            if oldSymbols != newSymbols {
+                Task { await priceService.fetchHistorical(items: trackedItems) }
+            }
         }
     }
 

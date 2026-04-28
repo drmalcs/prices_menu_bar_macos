@@ -1,15 +1,22 @@
 import Foundation
 
+enum MarketState: Equatable {
+    case openLessThan1h     // regular session started < 3600 s ago
+    case open               // regular session open ≥ 3600 s
+    case closed             // not in regular session
+}
+
 struct RealtimeData {
-    let priceUSD: Double
+    let priceUSD: Double    // native currency price (GBX for UK stocks, USD for others)
     let priceGBP: Double
-    let change1h: Double?   // % vs price 1 hour ago; nil when unavailable (AV fallback)
+    let change1h: Double?   // % vs 1hr ago; nil when AV fallback
+    let marketState: MarketState
     let lastFetched: Date
 }
 
 struct HistoricalData {
-    let change24h: Double?  // % vs previous trading day close
-    let change1y: Double?   // % vs closing price ~1 year ago
+    let previousClose: Double?  // previous session close, native currency (for 24h% calculation)
+    let yearAgoClose: Double?   // close ~1yr ago, native currency (for 1y% calculation)
     let lastFetched: Date
 }
 

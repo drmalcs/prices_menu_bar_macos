@@ -16,8 +16,14 @@ enum Config {
                 guard !t.isEmpty, !t.hasPrefix("#") else { return }
                 let parts = t.split(separator: "=", maxSplits: 1).map(String.init)
                 guard parts.count == 2 else { return }
-                setenv(parts[0].trimmingCharacters(in: .whitespaces),
-                       parts[1].trimmingCharacters(in: .whitespaces), 1)
+                let key = parts[0].trimmingCharacters(in: .whitespaces)
+                var value = parts[1].trimmingCharacters(in: .whitespaces)
+                // Strip surrounding quotes: "value" or 'value'
+                if (value.hasPrefix("\"") && value.hasSuffix("\"")) ||
+                   (value.hasPrefix("'")  && value.hasSuffix("'")) {
+                    value = String(value.dropFirst().dropLast())
+                }
+                setenv(key, value, 1)
             }
             return
         }

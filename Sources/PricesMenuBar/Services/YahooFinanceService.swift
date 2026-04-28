@@ -10,25 +10,59 @@ struct YahooFinanceService {
         return URLSession(configuration: cfg)
     }()
 
-    // Called on every popover open. Uses 1h/2d chart: last close = current, second-to-last = 1hr ago.
+    // Called on every popover open. Uses 5m/5d chart for price and accurate 1h%.
+    // range=5d (not 1d) so closed exchanges always have recent bars available.
     func fetchRealtimeData(for items: [TrackedItem]) async throws -> [String: RealtimeData] {
         let gbpUSD = try await fetchGBPUSDRate()
         return try await withThrowingTaskGroup(of: (String, RealtimeData).self) { group in
             for item in items {
                 group.addTask {
-                    let chart = try await self.fetchChart(symbol: item.symbol, interval: "1h", range: "2d")
+                    let chart = try await self.fetchChart(symbol: item.symbol, interval: "5m", range: "5d")
                     guard let result = chart.chart.result?.first else {
                         throw ServiceError.invalidResponse("No realtime data for \(item.symbol)")
                     }
-                    let closes = result.indicators.quote.first?.close.compactMap { $0 } ?? []
-                    guard let current = closes.last else {
-                        throw ServiceError.invalidResponse("No closes for \(item.symbol)")
+                    let timestamps = result.timestamp ?? []
+                    let allCloses = result.indicators.quote.first?.close ?? []
+
+                    // Use the official regular-market price (live intraday or last close).
+                    let current = result.meta.regularMarketPrice
+                    guard current > 0 else {
+                        throw ServiceError.invalidResponse("No regular market price for \(item.symbol)")
                     }
-                    let change1h: Double? = closes.count >= 2
-                        ? { let p = closes[closes.count - 2]; return p > 0 ? (current - p) / p * 100 : nil }()
-                        : nil
+
+                    let now = Int(Date().timeIntervalSince1970)
+
+                    // Market state — crypto is always open; stocks use the trading-period window.
+                    let marketState: MarketState
+                    if item.assetType == .crypto {
+                        marketState = .open
+                    } else if let r = result.meta.currentTradingPeriod?.regular,
+                              now >= r.start && now <= r.end {
+                        marketState = (now - r.start) < 3600 ? .openLessThan1h : .open
+                    } else {
+                        marketState = .closed
+                    }
+
+                    // 1h reference: last bar at or before (now - 3600s).
+                    // 5m bars mean this is within 5 min of a true 60-min lookback for any symbol.
+                    let target = now - 3600
+                    let refBar = zip(timestamps, allCloses)
+                        .filter { $0.0 <= target }
+                        .compactMap { ts, c -> (Int, Double)? in c.map { (ts, $0) } }
+                        .last
+
+                    let change1h: Double?
+                    if let (_, refPrice) = refBar, refPrice > 0 {
+                        change1h = (current - refPrice) / refPrice * 100
+                    } else {
+                        change1h = nil
+                    }
+
                     let priceGBP = self.toGBP(price: current, currency: result.meta.currency, gbpUSD: gbpUSD)
-                    return (item.symbol, RealtimeData(priceUSD: current, priceGBP: priceGBP, change1h: change1h, lastFetched: Date()))
+                    return (item.symbol, RealtimeData(
+                        priceUSD: current, priceGBP: priceGBP, change1h: change1h,
+                        marketState: marketState, lastFetched: Date()
+                    ))
                 }
             }
             var out: [String: RealtimeData] = [:]
@@ -37,7 +71,8 @@ struct YahooFinanceService {
         }
     }
 
-    // Called at startup and when items change. Uses 1d/1y chart: prev close + 1yr-ago close.
+    // Called on every popover open and when items change.
+    // Returns previous session close and year-ago close as raw prices.
     func fetchHistoricalData(for items: [TrackedItem]) async throws -> [String: HistoricalData] {
         return try await withThrowingTaskGroup(of: (String, HistoricalData).self) { group in
             for item in items {
@@ -46,23 +81,18 @@ struct YahooFinanceService {
                     guard let result = chart.chart.result?.first else {
                         throw ServiceError.invalidResponse("No historical data for \(item.symbol)")
                     }
-                    let meta = result.meta
                     let closes = result.indicators.quote.first?.close.compactMap { $0 } ?? []
 
-                    // 24h: current vs previous trading day close
-                    let change24h: Double? = meta.chartPreviousClose.flatMap { prev in
-                        guard prev > 0, let last = closes.last else { return nil }
-                        return (last - prev) / prev * 100
-                    }
+                    // closes[-1] is either today's partial/complete bar or the last completed
+                    // session — either way, closes[-2] is always the session before that,
+                    // which is what we want as the reference for 24h% calculation.
+                    let previousClose: Double? = closes.count >= 2 ? closes[closes.count - 2] : nil
 
-                    // 1y: current vs first close in the 1-year range
-                    let firstClose: Double? = closes.first
-                    let change1y: Double? = firstClose.flatMap { first in
-                        guard first > 0, let last = closes.last else { return nil }
-                        return (last - first) / first * 100
-                    }
-
-                    return (item.symbol, HistoricalData(change24h: change24h, change1y: change1y, lastFetched: Date()))
+                    return (item.symbol, HistoricalData(
+                        previousClose: previousClose,
+                        yearAgoClose: closes.first,
+                        lastFetched: Date()
+                    ))
                 }
             }
             var out: [String: HistoricalData] = [:]
@@ -115,13 +145,22 @@ struct YFChartContainer: Decodable {
 }
 struct YFChartResult: Decodable {
     let meta: YFMeta
+    let timestamp: [Int]?
     let indicators: YFIndicators
+}
+struct YFTradingPeriod: Decodable {
+    let start: Int
+    let end: Int
+}
+struct YFCurrentTradingPeriod: Decodable {
+    let regular: YFTradingPeriod
 }
 struct YFMeta: Decodable {
     let symbol: String
     let currency: String?
     let regularMarketPrice: Double
-    let chartPreviousClose: Double?
+    let regularMarketTime: Int
+    let currentTradingPeriod: YFCurrentTradingPeriod?
 }
 struct YFIndicators: Decodable {
     let quote: [YFQuote]

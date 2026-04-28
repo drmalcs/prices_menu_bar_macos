@@ -2,7 +2,6 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject var store: AppStore
-    @Environment(\.dismiss) private var dismiss
 
     @State private var query = ""
     @State private var results: [YahooSearchResult] = []
@@ -15,7 +14,7 @@ struct SettingsView: View {
             HStack {
                 Text("Settings").font(.headline)
                 Spacer()
-                Button("Done") { dismiss() }
+                Button("Done") { NSApp.keyWindow?.close() }
             }
             .padding()
 
@@ -26,6 +25,8 @@ struct SettingsView: View {
                     addSection
                     Divider()
                     trackedSection
+                    Divider()
+                    legendSection
                     Divider()
                     apiKeySection
                 }
@@ -78,7 +79,7 @@ struct SettingsView: View {
     private var trackedSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Tracked Items").font(.subheadline).bold()
-            Text("Set Qty to calculate the Val (GBP) column. Drag to reorder. Delete with ⌫.")
+            Text("Set Qty and Tax % to calculate the Val (GBP) column. Val = price × qty × (1 − tax).")
                 .font(.caption).foregroundStyle(.secondary)
 
             ForEach($store.trackedItems) { $item in
@@ -94,7 +95,14 @@ struct SettingsView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         TextField("0", value: $item.quantity, format: .number)
-                            .frame(width: 80)
+                            .frame(width: 70)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.caption)
+                        Text("Tax %")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        TextField("0", value: $item.taxRate, format: .number)
+                            .frame(width: 50)
                             .textFieldStyle(.roundedBorder)
                             .font(.caption)
                     }
@@ -109,6 +117,21 @@ struct SettingsView: View {
                 .padding(.vertical, 4)
                 Divider()
             }
+        }
+    }
+
+    private var legendSection: some View {
+        HStack(alignment: .top, spacing: 0) {
+            Text("1h")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text("%")
+                .font(.caption)
+                .foregroundStyle(Theme.warning)
+            Text(" — When yellow, the market has been open less than 1 hour. The figure compares the current price to the previous session's close, not a true 60-minute move.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

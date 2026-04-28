@@ -1,7 +1,7 @@
 import Foundation
 
 // Fallback when Yahoo Finance fails. Sequential fetches to respect rate limits.
-// 1h change is unavailable from basic AV endpoints — always nil.
+// change1h is unavailable from basic AV endpoints — always nil.
 struct AlphaVantageService {
     private let base = "https://www.alphavantage.co/query"
 
@@ -52,7 +52,8 @@ struct AlphaVantageService {
         case "GBP": priceGBP = price
         default:    priceGBP = price / gbpUSD
         }
-        return RealtimeData(priceUSD: price, priceGBP: priceGBP, change1h: nil, lastFetched: Date())
+        return RealtimeData(priceUSD: price, priceGBP: priceGBP, change1h: nil,
+                            marketState: .open, lastFetched: Date())
     }
 
     private func fetchCurrentPrice(item: TrackedItem, key: String) async throws -> (Double, String) {
@@ -78,7 +79,7 @@ struct AlphaVantageService {
         }
     }
 
-    // MARK: - Historical
+    // MARK: - Historical (previous session close + year-ago close)
 
     private func fetchItemHistorical(item: TrackedItem, key: String) async throws -> HistoricalData {
         if item.assetType == .crypto {
@@ -89,19 +90,20 @@ struct AlphaVantageService {
             let r = try JSONDecoder().decode(AVCryptoDailyResponse.self, from: data)
             guard let series = r.timeSeries else { throw ServiceError.noData }
             let sorted = series.keys.sorted()
-            guard sorted.count >= 2,
-                  let lastEntry  = series[sorted.last ?? ""],
-                  let prevEntry  = series[sorted[sorted.count - 2]],
-                  let lastPrice  = lastEntry["4a. close (USD)"].flatMap(Double.init),
-                  let prevPrice  = prevEntry["4a. close (USD)"].flatMap(Double.init),
-                  let firstEntry = series[sorted.first ?? ""],
-                  let yearPrice  = firstEntry["4a. close (USD)"].flatMap(Double.init),
-                  prevPrice > 0, yearPrice > 0 else { throw ServiceError.noData }
-            return HistoricalData(
-                change24h: (lastPrice - prevPrice) / prevPrice * 100,
-                change1y:  (lastPrice - yearPrice) / yearPrice * 100,
-                lastFetched: Date()
-            )
+            guard sorted.count >= 2 else { throw ServiceError.noData }
+
+            // Crypto trades 24/7; determine if today's entry is present.
+            let todayStr = Self.todayDateString()
+            let prevKey: String
+            if sorted.last == todayStr {
+                prevKey = sorted[sorted.count - 2]
+            } else {
+                prevKey = sorted.last ?? ""
+            }
+            let previousClose = series[prevKey]?["4a. close (USD)"].flatMap(Double.init)
+            let yearKey = Self.keyNearestOneYearAgo(in: sorted)
+            let yearAgoClose = series[yearKey]?["4a. close (USD)"].flatMap(Double.init)
+            return HistoricalData(previousClose: previousClose, yearAgoClose: yearAgoClose, lastFetched: Date())
         } else {
             let sym = item.symbol.hasSuffix(".L") ? String(item.symbol.dropLast(2)) : item.symbol
             let data = try await get(params: [
@@ -110,20 +112,33 @@ struct AlphaVantageService {
             let r = try JSONDecoder().decode(AVDailyResponse.self, from: data)
             guard let series = r.timeSeries else { throw ServiceError.noData }
             let sorted = series.keys.sorted()
-            guard sorted.count >= 2,
-                  let lastEntry  = series[sorted.last ?? ""],
-                  let prevEntry  = series[sorted[sorted.count - 2]],
-                  let lastPrice  = lastEntry["4. close"].flatMap(Double.init),
-                  let prevPrice  = prevEntry["4. close"].flatMap(Double.init),
-                  let firstEntry = series[sorted.first ?? ""],
-                  let yearPrice  = firstEntry["4. close"].flatMap(Double.init),
-                  prevPrice > 0, yearPrice > 0 else { throw ServiceError.noData }
-            return HistoricalData(
-                change24h: (lastPrice - prevPrice) / prevPrice * 100,
-                change1y:  (lastPrice - yearPrice) / yearPrice * 100,
-                lastFetched: Date()
-            )
+            guard sorted.count >= 2 else { throw ServiceError.noData }
+
+            let todayStr = Self.todayDateString()
+            let prevKey: String
+            if sorted.last == todayStr {
+                prevKey = sorted[sorted.count - 2]
+            } else {
+                prevKey = sorted.last ?? ""
+            }
+            let previousClose = series[prevKey]?["4. close"].flatMap(Double.init)
+            let yearKey = Self.keyNearestOneYearAgo(in: sorted)
+            let yearAgoClose = series[yearKey]?["4. close"].flatMap(Double.init)
+            return HistoricalData(previousClose: previousClose, yearAgoClose: yearAgoClose, lastFetched: Date())
         }
+    }
+
+    private static func todayDateString() -> String {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        return fmt.string(from: Date())
+    }
+
+    private static func keyNearestOneYearAgo(in sortedKeys: [String]) -> String {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        let target = fmt.string(from: Calendar.current.date(byAdding: .year, value: -1, to: Date()) ?? Date())
+        return sortedKeys.last(where: { $0 <= target }) ?? sortedKeys.first ?? ""
     }
 
     // MARK: - HTTP helper
