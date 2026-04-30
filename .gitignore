@@ -1,6 +1,9 @@
 .DS_Store
 .build/
 .swiftpm/
+*.o
+*.d
+Prices.app/
 *.xcuserstate
 xcuserdata/
 .env

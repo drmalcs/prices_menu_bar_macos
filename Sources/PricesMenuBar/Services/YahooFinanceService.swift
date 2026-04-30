@@ -5,7 +5,7 @@ struct YahooFinanceService {
         let cfg = URLSessionConfiguration.default
         cfg.timeoutIntervalForRequest = 15
         cfg.httpAdditionalHeaders = [
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
+            "User-Agent": "Mozilla/5.0 (Macintsoft; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
         ]
         return URLSession(configuration: cfg)
     }()
@@ -32,17 +32,6 @@ struct YahooFinanceService {
 
                     let now = Int(Date().timeIntervalSince1970)
 
-                    // Market state — crypto is always open; stocks use the trading-period window.
-                    let marketState: MarketState
-                    if item.assetType == .crypto {
-                        marketState = .open
-                    } else if let r = result.meta.currentTradingPeriod?.regular,
-                              now >= r.start && now <= r.end {
-                        marketState = (now - r.start) < 3600 ? .openLessThan1h : .open
-                    } else {
-                        marketState = .closed
-                    }
-
                     // 1h reference: last bar at or before (now - 3600s).
                     // 5m bars mean this is within 5 min of a true 60-min lookback for any symbol.
                     let target = now - 3600
@@ -58,10 +47,12 @@ struct YahooFinanceService {
                         change1h = nil
                     }
 
+                    let period = item.assetType == .crypto ? nil : result.meta.currentTradingPeriod?.regular
                     let priceGBP = self.toGBP(price: current, currency: result.meta.currency, gbpUSD: gbpUSD)
                     return (item.symbol, RealtimeData(
                         priceUSD: current, priceGBP: priceGBP, change1h: change1h,
-                        marketState: marketState, lastFetched: Date()
+                        tradingPeriodStart: period?.start, tradingPeriodEnd: period?.end,
+                        lastFetched: Date()
                     ))
                 }
             }
@@ -72,7 +63,7 @@ struct YahooFinanceService {
     }
 
     // Called on every popover open and when items change.
-    // Returns previous session close and year-ago close as raw prices.
+    // Returns previous session close and year-ago close. EPS is fetched separately by AlphaVantageService.
     func fetchHistoricalData(for items: [TrackedItem]) async throws -> [String: HistoricalData] {
         return try await withThrowingTaskGroup(of: (String, HistoricalData).self) { group in
             for item in items {
@@ -82,15 +73,11 @@ struct YahooFinanceService {
                         throw ServiceError.invalidResponse("No historical data for \(item.symbol)")
                     }
                     let closes = result.indicators.quote.first?.close.compactMap { $0 } ?? []
-
-                    // closes[-1] is either today's partial/complete bar or the last completed
-                    // session — either way, closes[-2] is always the session before that,
-                    // which is what we want as the reference for 24h% calculation.
                     let previousClose: Double? = closes.count >= 2 ? closes[closes.count - 2] : nil
-
                     return (item.symbol, HistoricalData(
                         previousClose: previousClose,
                         yearAgoClose: closes.first,
+                        trailingEps: nil,
                         lastFetched: Date()
                     ))
                 }
@@ -121,9 +108,8 @@ struct YahooFinanceService {
 
     private func fetchChart(symbol: String, interval: String, range: String) async throws -> YFChartResponse {
         let encoded = symbol.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? symbol
-        guard let url = URL(string: "https://query1.finance.yahoo.com/v8/finance/chart/\(encoded)?interval=\(interval)&range=\(range)&includePrePost=false") else {
-            throw ServiceError.invalidURL
-        }
+        let urlStr = "https://query1.finance.yahoo.com/v8/finance/chart/\(encoded)?interval=\(interval)&range=\(range)&includePrePost=false"
+        guard let url = URL(string: urlStr) else { throw ServiceError.invalidURL }
         let (data, response) = try await Self.session.data(from: url)
         if let http = response as? HTTPURLResponse, http.statusCode == 429 {
             throw ServiceError.httpError(429)

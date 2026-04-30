@@ -5,6 +5,16 @@ import Foundation
 struct AlphaVantageService {
     private let base = "https://www.alphavantage.co/query"
 
+    // Fetches trailing 12-month EPS from the OVERVIEW function.
+    // Returns nil when AV has no data for the symbol (returns "None").
+    // UK LSE symbols must already have ".L" stripped before calling.
+    func fetchEPS(symbol: String, key: String) async throws -> Double? {
+        let data = try await get(params: ["function": "OVERVIEW", "symbol": symbol, "apikey": key])
+        let r = try JSONDecoder().decode(AVOverviewResponse.self, from: data)
+        guard let s = r.eps, s != "None", s != "-" else { return nil }
+        return Double(s)
+    }
+
     func fetchRealtimeData(for items: [TrackedItem]) async throws -> [String: RealtimeData] {
         let key = Config.alphaVantageKey
         guard !key.isEmpty else { throw ServiceError.missingAPIKey }
@@ -53,7 +63,7 @@ struct AlphaVantageService {
         default:    priceGBP = price / gbpUSD
         }
         return RealtimeData(priceUSD: price, priceGBP: priceGBP, change1h: nil,
-                            marketState: .open, lastFetched: Date())
+                            tradingPeriodStart: nil, tradingPeriodEnd: nil, lastFetched: Date())
     }
 
     private func fetchCurrentPrice(item: TrackedItem, key: String) async throws -> (Double, String) {
@@ -103,7 +113,7 @@ struct AlphaVantageService {
             let previousClose = series[prevKey]?["4a. close (USD)"].flatMap(Double.init)
             let yearKey = Self.keyNearestOneYearAgo(in: sorted)
             let yearAgoClose = series[yearKey]?["4a. close (USD)"].flatMap(Double.init)
-            return HistoricalData(previousClose: previousClose, yearAgoClose: yearAgoClose, lastFetched: Date())
+            return HistoricalData(previousClose: previousClose, yearAgoClose: yearAgoClose, trailingEps: nil, lastFetched: Date())
         } else {
             let sym = item.symbol.hasSuffix(".L") ? String(item.symbol.dropLast(2)) : item.symbol
             let data = try await get(params: [
@@ -124,7 +134,7 @@ struct AlphaVantageService {
             let previousClose = series[prevKey]?["4. close"].flatMap(Double.init)
             let yearKey = Self.keyNearestOneYearAgo(in: sorted)
             let yearAgoClose = series[yearKey]?["4. close"].flatMap(Double.init)
-            return HistoricalData(previousClose: previousClose, yearAgoClose: yearAgoClose, lastFetched: Date())
+            return HistoricalData(previousClose: previousClose, yearAgoClose: yearAgoClose, trailingEps: nil, lastFetched: Date())
         }
     }
 
@@ -180,4 +190,8 @@ private struct AVDailyResponse: Decodable {
 private struct AVCryptoDailyResponse: Decodable {
     let timeSeries: [String: [String: String]]?
     enum CodingKeys: String, CodingKey { case timeSeries = "Time Series (Digital Currency Daily)" }
+}
+private struct AVOverviewResponse: Decodable {
+    let eps: String?
+    enum CodingKeys: String, CodingKey { case eps = "EPS" }
 }

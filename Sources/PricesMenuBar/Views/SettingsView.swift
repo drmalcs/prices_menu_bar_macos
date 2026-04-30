@@ -22,13 +22,15 @@ struct SettingsView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
+                    apiKeySection
+                    Divider()
                     addSection
                     Divider()
                     trackedSection
                     Divider()
                     legendSection
                     Divider()
-                    apiKeySection
+                    peNoteSection
                 }
                 .padding()
             }
@@ -135,10 +137,17 @@ struct SettingsView: View {
         }
     }
 
+    private var peNoteSection: some View {
+        Text("P/E (price-to-earnings) is computed live as current price ÷ trailing 12-month EPS. EPS is fetched from Alpha Vantage once per session (requires API key above). Crypto and assets with no EPS data show —.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
     private var apiKeySection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Alpha Vantage API Key").font(.subheadline).bold()
-            Text("Used as a fallback when Yahoo Finance throttles. Leave blank to use Yahoo only.")
+            Text("Required to fetch P/E ratios (trailing EPS). Also used as a fallback data source when Yahoo Finance throttles. Free at alphavantage.co — 25 requests/day.")
                 .font(.caption).foregroundStyle(.secondary)
 
             SecureAPIKeyField()
