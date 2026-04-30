@@ -1,6 +1,6 @@
 # Prices — macOS Menu Bar App
 
-A lightweight macOS menu bar app that shows live prices for crypto and stocks. It sits in your menu bar and displays a panel with current prices, percentage changes, and a GBP portfolio value.
+A lightweight macOS menu bar app that shows live prices for crypto and stocks. It sits in your menu bar and displays a panel with current prices, percentage changes, a P/E ratio, and a GBP portfolio value.
 
 ![Price panel](images/Screenshot%202026-04-28%20at%2021.04.53.png)
 
@@ -8,18 +8,20 @@ A lightweight macOS menu bar app that shows live prices for crypto and stocks. I
 
 ## Features
 
-- **Tracks crypto and stocks** — works with any Yahoo Finance ticker: `BTC-USD`, `ETH-USD`, US stocks like `NVDA`, and UK LSE stocks like `RR.L` (LLOY.L, etc.)
-- **Five columns per asset:**
+- **Tracks crypto and stocks** — works with any Yahoo Finance ticker: `BTC-USD`, `ETH-USD`, US stocks like `NVDA`, and UK LSE stocks like `RR.L`
+- **Six columns per asset:**
   | Column | What it shows |
   |--------|--------------|
-  | Price | Current price in USD |
-  | 1h | % change over the last 60 minutes |
-  | 24h | % change vs the previous session's close |
-  | 1y | % change vs the price one year ago |
+  | Price | Current price in native currency |
+  | 1h % | % change over the last 60 minutes |
+  | 24h % | % change vs the previous session's close |
+  | 1y % | % change vs the price one year ago |
+  | P/E | Price-to-earnings ratio (stocks only; requires Alpha Vantage key) |
   | Val | Portfolio value in GBP — price × qty × (1 − tax rate) |
 - **Market-aware 1h column** — shows `CLOSED` for stocks when the exchange is shut; a yellow `%` means the market has been open less than one hour
+- **Smart refresh cadence** — refreshes every 30 seconds while the panel is open; drops to every 10 minutes in the background to avoid rate limiting
 - **No Dock icon** — lives entirely in the menu bar
-- **Yahoo Finance** as the primary data source; **Alpha Vantage** as an optional fallback
+- **Yahoo Finance** as the primary data source; **Alpha Vantage** for P/E data and as a fallback when Yahoo throttles
 
 ---
 
@@ -82,14 +84,12 @@ Go to **System Settings → General → Login Items** and add `Prices.app`.
 
 ## Settings
 
-Open Settings by clicking the **⚙** icon in the panel header.
+Open Settings by clicking the **⚙** icon in the panel toolbar.
 
-![Settings window](images/Screenshot%202026-04-28%20at%2021.05.24.png)
-
+- **Alpha Vantage API Key** — required to show P/E ratios; also used as a fallback when Yahoo Finance throttles. Get a free key at [alphavantage.co](https://www.alphavantage.co). Free tier supports 25 requests/day.
 - **Add Item** — search for any ticker by name or symbol (powered by Yahoo Finance search)
 - **Qty** — number of units you hold; used to calculate the Val column
 - **Tax %** — a tax rate applied to the Val column (e.g. 24 for CGT). Val = price × qty × (1 − tax / 100)
-- **Alpha Vantage API Key** — paste a free API key here if Yahoo Finance throttles your requests. Leave blank to use Yahoo only.
 
 ---
 
@@ -98,11 +98,12 @@ Open Settings by clicking the **⚙** icon in the panel header.
 | Indicator | Meaning |
 |-----------|---------|
 | `CLOSED` in the 1h column | The exchange is not currently in its regular trading session |
-| Yellow `%` in the 1h column | The market has been open less than 1 hour; the figure compares the current price to the previous session's close rather than a true 60-minute move |
+| Yellow `%` in the 1h column | The market has been open less than 1 hour; the figure compares to the previous session's close rather than a true 60-minute move |
+| `—` in P/E | Crypto, or no EPS data available from Alpha Vantage for that stock |
 
 ---
 
 ## Data sources
 
 - **[Yahoo Finance](https://finance.yahoo.com)** — primary source for real-time prices, intraday bars, and historical data. Uses the unofficial chart API; no key required.
-- **[Alpha Vantage](https://www.alphavantage.co)** — fallback if Yahoo Finance rate-limits. Requires a free API key (available at alphavantage.co). Note: Alpha Vantage does not provide 1h change data, so that column will show `—` when the fallback is active.
+- **[Alpha Vantage](https://www.alphavantage.co)** — used to fetch trailing 12-month EPS for P/E calculation, and as a fallback if Yahoo Finance rate-limits. Requires a free API key. Note: Alpha Vantage does not provide 1h change data, so that column shows `—` when the fallback is active.
