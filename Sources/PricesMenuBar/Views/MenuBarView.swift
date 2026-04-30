@@ -35,6 +35,14 @@ struct MenuBarView: View {
 
     private var toolbar: some View {
         HStack(spacing: 8) {
+            Button {
+                NSApp.terminate(nil)
+            } label: {
+                Image(systemName: "power")
+            }
+            .buttonStyle(.plain)
+            .help("Quit")
+
             Text("PRICES").font(.custom("Baskerville-BoldItalic", size: 14))
             if store.priceService.isLoadingRealtime {
                 let hasPrior = !store.priceService.realtime.isEmpty
