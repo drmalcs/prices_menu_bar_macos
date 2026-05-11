@@ -1,6 +1,6 @@
-# Prices — macOS Menu Bar App
+# Prices — macOS Menu Bar App (Claude Code Project)
 
-A lightweight macOS menu bar app that shows live prices for crypto and stocks. It sits in your menu bar and displays a panel with current prices, percentage changes, a P/E ratio, and a GBP portfolio value.
+A lightweight macOS menu bar app that shows live prices for crypto and stocks. It sits in your menu bar and displays a panel with current prices, percentage changes, a P/E ratio, and a GBP portfolio value. I concentrated on a clear specification including edge case behaviour (like reduced API call frequency when closed). Claude Code, in the terminal, created the Swift code.
 
 ![Price panel](images/Screenshot%202026-04-28%20at%2021.04.53.png)
 
